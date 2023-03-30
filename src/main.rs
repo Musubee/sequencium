@@ -5,8 +5,6 @@ use std::cmp::max;
 use std::str::FromStr;
 
 const GRID_LENGTH: usize = 6;
-const GRID_LEFT: f32 = 0.0;
-const GRID_TOP: f32 = 0.0;
 
 const BLOCK_SIZE: f32 = 50.0;
 const SPACE_BETWEEN_BLOCKS: f32 = 5.0;
@@ -43,7 +41,6 @@ enum TurnState {
 
 #[derive(Component)]
 struct Grid {
-    blocks: Vec<Vec<Entity>>,
     adj_list: HashMap<Entity, Vec<Entity>>,
 }
 
@@ -87,12 +84,14 @@ struct PlayerList {
 fn setup_board(mut commands: Commands, font_spec: Res<FontSpec>, player_list: Res<PlayerList>) {
     commands.spawn((Camera2dBundle::default(), MainCamera));
 
+    let (grid_left, grid_top) = get_grid_top_left();
+
     let mut blocks: Vec<Vec<Entity>> = Vec::with_capacity(GRID_LENGTH);
     for i in 0..GRID_LENGTH {
         let mut block_row: Vec<Entity> = Vec::with_capacity(GRID_LENGTH);
-        let block_y = GRID_TOP - i as f32 * (BLOCK_SIZE + SPACE_BETWEEN_BLOCKS);
+        let block_y = grid_top - i as f32 * (BLOCK_SIZE + SPACE_BETWEEN_BLOCKS);
         for j in 0..GRID_LENGTH {
-            let block_x = GRID_LEFT + j as f32 * (BLOCK_SIZE + SPACE_BETWEEN_BLOCKS);
+            let block_x = grid_left + j as f32 * (BLOCK_SIZE + SPACE_BETWEEN_BLOCKS);
             let (grid_value, owner) = get_init_block_data(i, j, &player_list.list);
             let grid_value_text = match grid_value {
                 GridValue(Some(value)) => value.to_string(),
@@ -192,7 +191,17 @@ fn setup_board(mut commands: Commands, font_spec: Res<FontSpec>, player_list: Re
 
     dbg!(&blocks);
     dbg!(&adj_list);
-    commands.spawn(Grid { blocks, adj_list });
+    commands.spawn(Grid { adj_list });
+}
+
+fn get_grid_top_left() -> (f32, f32) {
+    let grid_width =
+        GRID_LENGTH as f32 * (BLOCK_SIZE + SPACE_BETWEEN_BLOCKS) - SPACE_BETWEEN_BLOCKS;
+    let grid_height =
+        GRID_LENGTH as f32 * (BLOCK_SIZE + SPACE_BETWEEN_BLOCKS) - SPACE_BETWEEN_BLOCKS;
+    let grid_left = -grid_width / 2.0;
+    let grid_top = grid_height / 2.0;
+    (grid_left, grid_top)
 }
 
 // The game starts with players owning blocks along the diagonal from
@@ -433,6 +442,7 @@ fn turn_end(
     owned_block_query: Query<(Entity, &GridValue, &OwnedBy)>,
     unowned_block_query: Query<(Entity, &GridValue), Without<OwnedBy>>,
     grid_query: Query<&Grid>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
     player_score_query: Query<(Entity, &mut Score)>,
     player_list: Res<PlayerList>,
     font_spec: Res<FontSpec>,
@@ -459,6 +469,9 @@ fn turn_end(
             winning_player_number = 2;
         }
 
+        let window = window_query.single();
+        let text_y = window.height() / 2.0 - 30.0;
+
         commands.spawn(Text2dBundle {
             text: Text::from_section(
                 format!(
@@ -471,10 +484,15 @@ fn turn_end(
                     color: Color::BLACK,
                 },
             ),
-            transform: Transform::from_translation(Vec3::new(0.0, 0.0, 3.0)),
+            transform: Transform::from_translation(Vec3::new(0.0, text_y, 3.0)),
             ..Default::default()
         });
-    } else if next_player_has_moves(next_player, &adj_list, &owned_block_query, &unowned_block_query) {
+    } else if next_player_has_moves(
+        next_player,
+        &adj_list,
+        &owned_block_query,
+        &unowned_block_query,
+    ) {
         let current_player = current_player_query.single();
         for (i, &player) in player_list.list.iter().enumerate() {
             if player == current_player {
